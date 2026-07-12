@@ -192,6 +192,34 @@ export async function ensureTables(): Promise<void> {
     }
   }
 
+  // Migrate conversations table to add new columns if missing
+  if (existingTables.has('conversations')) {
+    try {
+      const columnsResult = await pool.query(`
+        SELECT column_name FROM information_schema.columns 
+        WHERE table_name = 'conversations'
+      `);
+      const existingColumns = new Set(columnsResult.rows.map(row => row.column_name));
+      
+      if (!existingColumns.has('message_count')) {
+        await pool.query(`ALTER TABLE conversations ADD COLUMN message_count INTEGER NOT NULL DEFAULT 0`);
+        console.log('✅ Added message_count column to conversations table');
+      }
+      
+      if (!existingColumns.has('last_summary_at')) {
+        await pool.query(`ALTER TABLE conversations ADD COLUMN last_summary_at TIMESTAMP WITH TIME ZONE`);
+        console.log('✅ Added last_summary_at column to conversations table');
+      }
+      
+      if (!existingColumns.has('is_agent_transfer_requested')) {
+        await pool.query(`ALTER TABLE conversations ADD COLUMN is_agent_transfer_requested BOOLEAN NOT NULL DEFAULT false`);
+        console.log('✅ Added is_agent_transfer_requested column to conversations table');
+      }
+    } catch (e) {
+      console.error('Migration error for conversations:', e);
+    }
+  }
+
   const missingTables = Object.keys(tableDefinitions).filter(
     name => !existingTables.has(name)
   );
