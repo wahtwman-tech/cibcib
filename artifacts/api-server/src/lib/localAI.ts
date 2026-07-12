@@ -116,8 +116,16 @@ const AGENT_REQUEST_TRIGGERS = [
   "إلغاء المعاملة",
   "إلغاء الحساب",
   "فتح حساب جديد",
-  "تقديم شكوى"
+  "تقديم شكوى",
+  "مشكلة تقنية",
+  "خطأ تقني",
+  "لا يعمل"
 ];
+
+// ============================================
+// رابط الموقع الرسمي
+// ============================================
+const SITE_URL = "https://cib-test.up.railway.app";
 
 // ============================================
 // التحليل الذكي للمحتوى (Local Search Engine)
@@ -174,8 +182,16 @@ function searchLocalContent(query: string): { answer: string; source: string } |
   if (lowerQuery.includes('شرط') || lowerQuery.includes('شروط') || lowerQuery.includes('مؤهل') || lowerQuery.includes('استحق')) {
     const eligibility = SITE_CONTENT.eligibility.map(e => `✓ ${e}`).join('\n');
     return {
-      answer: `شروط التفعيل:\n${eligibility}`,
+      answer: `شروط التفعيل:\n${eligibility}\n\nللتسجيل: ${SITE_URL}`,
       source: "eligibility"
+    };
+  }
+
+  // البحث عن تسجيل / موقع / رابط
+  if (lowerQuery.includes('تسجيل') || lowerQuery.includes('موقع') || lowerQuery.includes('رابط') || lowerQuery.includes('سجل')) {
+    return {
+      answer: `يمكنك التسجيل من خلال الموقع الرسمي:\n\n🔗 ${SITE_URL}\n\nاتبع الخطوات التالية:\n1️⃣ أدخل بياناتك\n2️⃣ اختر لون ساعتك\n3️⃣ انتظر الموافقة`,
+      source: "registration"
     };
   }
 
@@ -275,23 +291,13 @@ function generateSmartReply(options: SmartReplyOptions): {
     };
   }
 
-  // 6️⃣ للأسئلة الصعبة أو غير المعروفة - محاولة تقديم مساعدة عامة
-  const generalHelp = `حسناً، سأحاول مساعدتك قدر الإمكان! 🤔\n\n`;
-  
-  const relatedInfo = [
-    "إذا كان سؤالك عن الساعات الذكية: لدينا 9 ألوان متاحة مجاناً!",
-    "إذا كان سؤالك عن التفعيل: التسجيل يتم في 6 خطوات بسيطة.",
-    "إذا كان سؤالك عن التمويل: نوفر خدمات تمويل مرنة للسيارات والمنازل.",
-    "إذا كان سؤالك عن السحب على سيارة: استخدم بطاقتك لزيادة فرصك!"
-  ];
-  
-  const randomHelp = relatedInfo[Math.floor(Math.random() * relatedInfo.length)];
-  
+  // 6️⃣ للأسئلة الصعبة أو غير المعروفة
+  // لا نقوم بالاختراع، نتبع البروتوكول الرسمي
   return {
-    reply: `${generalHelp}${randomHelp}\n\nهل تريد معرفة المزيد عن موضوع معين؟ 😊\n\nأو اضغط على الزر أدناه للتواصل مع الموظف:`,
+    reply: `أعتذر، لا أملك معلومات كافية للإجابة على هذا السؤال.\n\nيمكنني مساعدتك في:\n• الاستفسارات عن الساعات الذكية وألوانها\n• خطوات التفعيل والتسجيل\n• شروط الاستحقاق\n• خدمات البنك (التمويل، السحب على سيارة)\n\nهل تود التواصل مع أحد موظفينا؟\n(يرجى كتابة: التواصل مع الموظف)`,
     requestAgentTransfer: false,
     reactivateBot: false,
-    context: "GENERAL_HELP"
+    context: "OUT_OF_SCOPE"
   };
 }
 
