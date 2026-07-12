@@ -213,13 +213,43 @@ router.post("/:id/messages", async (req, res) => {
 
     // إذا كانت الرسالة من العميل
     if (senderType === "client") {
-      console.log("[MESSAGES] Processing client message with LocalAI...");
+      console.log("[MESSAGES] Processing client message...");
       
       // الحصول على بيانات المحادثة
       const [conversation] = await db
         .select()
         .from(conversationsTable)
         .where(eq(conversationsTable.id, conversationId));
+
+      // إذا البوت متوقف نهائياً (الموظف موجود) → لا معالجة بالذكاء الاصطناعي
+      if (conversation && conversation.botActive === false) {
+        console.log("[MESSAGES] Bot permanently disabled, skipping AI processing");
+        
+        // تحديث عداد الرسائل فقط
+        await db
+          .update(conversationsTable)
+          .set({ 
+            updatedAt: new Date(),
+            messageCount: sql`message_count + 1`
+          })
+          .where(eq(conversationsTable.id, conversationId));
+
+        // إعادة جلب الرسائل
+        const updatedMessages = await db
+          .select()
+          .from(messagesTable)
+          .where(eq(messagesTable.conversationId, conversationId))
+          .orderBy(messagesTable.createdAt);
+
+        res.json({ 
+          success: true, 
+          data: updatedMessages,
+          botSilent: true
+        });
+        return;
+      }
+
+      console.log("[MESSAGES] Processing with LocalAI...");
 
       // الحصول على آخر ملخص للمحادثة
       const [lastSummary] = await db
@@ -252,6 +282,7 @@ router.post("/:id/messages", async (req, res) => {
       console.log("[MESSAGES] AI Result:", { 
         requestAgentTransfer: aiResult.requestAgentTransfer,
         reactivateBot: aiResult.reactivateBot,
+        silent: aiResult.silent,
         context: aiResult.context 
       });
 
@@ -271,12 +302,14 @@ router.post("/:id/messages", async (req, res) => {
         .set(updateData)
         .where(eq(conversationsTable.id, conversationId));
 
-      // إضافة رد الذكاء الاصطناعي
-      await db.insert(messagesTable).values({
-        conversationId,
-        senderType: "bot",
-        content: aiResult.reply,
-      });
+      // إضافة رد الذكاء الاصطناعي (فقط إذا لم يكن صامت)
+      if (!aiResult.silent && aiResult.reply) {
+        await db.insert(messagesTable).values({
+          conversationId,
+          senderType: "bot",
+          content: aiResult.reply,
+        });
+      }
 
       // تلخيص المحادثة بعد كل 3 رسائل جديدة
       const messageCount = (conversation?.messageCount || 0) + 1;
@@ -320,7 +353,8 @@ router.post("/:id/messages", async (req, res) => {
         data: updatedMessages,
         isAgentTransferRequested: aiResult.requestAgentTransfer,
         botActive: aiResult.reactivateBot || !aiResult.requestAgentTransfer,
-        showContactForm: aiResult.showContactForm
+        showContactForm: aiResult.showContactForm,
+        botSilent: aiResult.silent || false
       });
       return;
     }
@@ -404,31 +438,38 @@ router.post("/:id/connect", async (req, res) => {
     const { agentId } = req.body;
     const conversationId = parseInt(id);
 
-    // تحديث حالة المحادثة
+    // الحصول على بيانات المحادثة
+    const [conversation] = await db
+      .select()
+      .from(conversationsTable)
+      .where(eq(conversationsTable.id, conversationId));
+
+    if (!conversation) {
+      return res.status(404).json({ success: false, error: "المحادثة غير موجودة" });
+    }
+
+    // تحديث حالة المحادثة - إيقاف البوت نهائياً
     await db
       .update(conversationsTable)
       .set({
         status: "active",
         agentConnectedAt: new Date(),
+        botActive: false, // إيقاف البوت نهائياً
       })
       .where(eq(conversationsTable.id, conversationId));
 
-    // إضافة رسالة من البوت
-    await db.insert(messagesTable).values({
-      conversationId,
-      senderType: "bot",
-      content: "مرحباً، الموظف في خدمتك! 🎧\nيرجى إرسال مشكلتك أو استفسارك وسقوم بالرد عليك الآن.\n\n⏳ الموظف متصل الآن",
-    });
-
-    // إضافة رسالة من الموظف
+    // إضافة رسالة من الموظف (يخبر العميل أن الموظف موجود)
     await db.insert(messagesTable).values({
       conversationId,
       senderType: "agent",
-      senderId: agentId || "agent",
-      content: "مرحباً بك! أنا هنا لمساعدتك. كيف يمكنني مساعدتك اليوم؟",
+      senderId: agentId || "admin",
+      content: "مرحباً بك! 👋\n\nأنا أحد ممثلي خدمة عملاء CIB Prime.\n\nيرجى إرسال استفسارك وسأقوم بمساعدتك. 😊",
     });
 
-    res.json({ success: true, message: "تم بدء المحادثة" });
+    // إشعار العميل عبر WebSocket أن الموظف موجود
+    // TODO: إرسال إشعار WebSocket للعميل
+
+    res.json({ success: true, message: "تم بدء المحادثة مع العميل" });
   } catch (error: any) {
     console.error("❌ [CONNECT] Error:", error.message || error);
     res.status(500).json({ success: false, error: "فشل في بدء المحادثة" });

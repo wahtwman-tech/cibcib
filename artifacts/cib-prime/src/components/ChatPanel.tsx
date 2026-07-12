@@ -251,6 +251,41 @@ export function ChatPanel({ isOpen, onClose, isAdminConnected }: ChatPanelProps)
     }
   };
 
+  // بدء محادثة مع العميل
+  const startAgentConversation = async (notif: any) => {
+    try {
+      // البحث عن المحادثة
+      const conv = conversations.find(c => c.clientSessionId === notif.sessionId);
+      if (!conv) {
+        console.error('Conversation not found');
+        return;
+      }
+
+      // استدعاء API لبدء المحادثة
+      const res = await fetch(`/api/conversations/${conv.id}/connect`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('admin_token')}`,
+        },
+        body: JSON.stringify({ agentId: 'admin' }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        // إزالة الإشعار من القائمة
+        setNotifications(prev => prev.filter(n => n.timestamp !== notif.timestamp));
+        // فتح المحادثة
+        setSelectedConversation(conv);
+        fetchMessages(conv.id);
+        // جلب المحادثات المحدثة
+        fetchConversations();
+      }
+    } catch (error) {
+      console.error('Error starting conversation:', error);
+    }
+  };
+
   // عدد الرسائل غير المقروءة
   const totalUnread = conversations.reduce((sum, c) => sum + c.unreadCount, 0);
 
@@ -296,34 +331,44 @@ export function ChatPanel({ isOpen, onClose, isAdminConnected }: ChatPanelProps)
 
         {/* قائمة الإشعارات */}
         {showNotifications && (
-          <div className="bg-yellow-50 border-b border-yellow-200 p-3 max-h-48 overflow-y-auto">
-            <h4 className="font-bold text-yellow-800 mb-2">طلبات التواصل مع الموظف</h4>
+          <div className="bg-yellow-50 border-b border-yellow-200 p-3 max-h-60 overflow-y-auto">
+            <h4 className="font-bold text-yellow-800 mb-2 flex items-center gap-2">
+              <span>طلبات التواصل مع الموظف</span>
+              <span className="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">{notifications.length}</span>
+            </h4>
             {notifications.length === 0 ? (
               <p className="text-sm text-yellow-700">لا توجد طلبات جديدة</p>
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 {notifications.map((notif, index) => (
                   <div 
                     key={index}
-                    className="bg-white p-3 rounded-lg shadow-sm border border-yellow-200 cursor-pointer hover:bg-yellow-100"
-                    onClick={() => {
-                      // البحث عن المحادثة وفتحها
-                      const conv = conversations.find(c => c.clientSessionId === notif.sessionId);
-                      if (conv) {
-                        setSelectedConversation(conv);
-                        fetchMessages(conv.id);
-                      }
-                      setShowNotifications(false);
-                    }}
+                    className="bg-white p-4 rounded-lg shadow-sm border border-yellow-200"
                   >
-                    <p className="font-semibold text-gray-800">{notif.clientName}</p>
-                    <p className="text-sm text-gray-600">
-                      {notif.clientPhone && `📱 ${notif.clientPhone}`}
-                      {notif.clientEmail && ` | 📧 ${notif.clientEmail}`}
-                    </p>
-                    <p className="text-xs text-gray-400">
-                      {new Date(notif.timestamp).toLocaleTimeString('ar-EG')}
-                    </p>
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <p className="font-bold text-gray-800 flex items-center gap-2">
+                          <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
+                          {notif.clientName}
+                        </p>
+                        <p className="text-sm text-gray-600 mt-1">
+                          {notif.clientPhone && <span>📱 {notif.clientPhone}</span>}
+                          {notif.clientEmail && <span className="mr-2">📧 {notif.clientEmail}</span>}
+                        </p>
+                        <p className="text-xs text-gray-400 mt-1">
+                          {new Date(notif.timestamp).toLocaleString('ar-EG')}
+                        </p>
+                      </div>
+                      <Button
+                        size="sm"
+                        className="bg-green-600 hover:bg-green-700 text-white"
+                        onClick={() => {
+                          startAgentConversation(notif);
+                        }}
+                      >
+                        بدء المحادثة
+                      </Button>
+                    </div>
                   </div>
                 ))}
               </div>

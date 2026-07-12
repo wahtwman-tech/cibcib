@@ -237,13 +237,16 @@ function generateSmartReply(options: SmartReplyOptions): {
     };
   }
 
-  // 2️⃣ إذا كان الـ bot غير نشط وسؤال جديد → إعادة تفعيل الـ bot
+  // 2️⃣ إذا كان الـ bot غير نشط → لا يرجع أبداً (الموظف موجود)
   if (!isBotActive) {
+    // البوت مغلق نهائياً بعد بدء المحادثة مع الموظف
     return {
-      reply: `مرحباً بك مجدداً! 😊\n\nأنا مساعدك الذكي وعائد للعمل.\n\nكيف يمكنني مساعدتك اليوم؟\n• استفسارات عن الساعات الذكية\n• خطوات التفعيل\n• خدمات البنك`,
+      reply: "", // لا يرسل شيئاً
       requestAgentTransfer: false,
-      reactivateBot: true,
-      context: "BOT_REACTIVATED"
+      showContactForm: false,
+      reactivateBot: false, // لا يعود أبداً
+      silent: true, // علامة للصمت التام
+      context: "BOT_PERMANENTLY_DISABLED"
     };
   }
 

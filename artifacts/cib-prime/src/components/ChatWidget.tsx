@@ -74,6 +74,13 @@ export function ChatWidget() {
       const data = await res.json();
       if (data.success) {
         setMessages(data.data);
+        
+        // التحقق من وجود رسالة من الموظف
+        const hasAgentMessage = data.data.some((m: Message) => m.senderType === 'agent');
+        if (hasAgentMessage) {
+          setWaitingForAgent(false);
+        }
+        
         // تحديث حالة المحادثة
         if (data.isAgentTransferRequested !== undefined) {
           setConversation(prev => prev ? { ...prev, isAgentTransferRequested: data.isAgentTransferRequested } : null);
@@ -108,9 +115,15 @@ export function ChatWidget() {
   // فحص الرسائل لطلب الموذجs
   useEffect(() => {
     const lastBotMessage = [...messages].reverse().find(m => m.senderType === 'bot');
+    const hasAgentMessage = messages.some(m => m.senderType === 'agent');
     
+    // إذا هناك رسالة من الموظف → العميل متصل بالموظف
+    if (hasAgentMessage) {
+      setShowContactForm(false);
+      setWaitingForAgent(true); // يظهر "الموظف متصل الآن"
+    }
     // إذا طلب البوت بيانات الاتصال
-    if (lastBotMessage && lastBotMessage.content.includes('يرجى ملء البيانات التالية')) {
+    else if (lastBotMessage && lastBotMessage.content.includes('يرجى ملء البيانات التالية')) {
       setShowContactForm(true);
       setWaitingForAgent(false);
     }
@@ -118,11 +131,6 @@ export function ChatWidget() {
     else if (lastBotMessage && lastBotMessage.content.includes('جاري توصيلك')) {
       setShowContactForm(false);
       setWaitingForAgent(true);
-    }
-    // إذا عاد البوت للعمل
-    else if (lastBotMessage && lastBotMessage.content.includes('عائد للعمل')) {
-      setShowContactForm(false);
-      setWaitingForAgent(false);
     }
   }, [messages]);
 
@@ -162,9 +170,10 @@ export function ChatWidget() {
         if (data.showContactForm !== undefined) {
           setShowContactForm(data.showContactForm);
         }
-        if (data.botActive !== undefined && !data.botActive) {
-          // البوت صامت
-          console.log('[ChatWidget] Bot is silent');
+        // إذا البوت صامت نهائياً (الموظف موجود)
+        if (data.botSilent) {
+          console.log('[ChatWidget] Bot is permanently silent - agent active');
+          // العميل ينتظر رد الموظف
         }
       } else {
         console.error('[ChatWidget] Failed to send message:', data.error);
@@ -305,16 +314,7 @@ export function ChatWidget() {
 
           {/* Input */}
           <div className="p-4 bg-white border-t">
-            {waitingForAgent ? (
-              // حالة انتظار الموظف
-              <div className="text-center py-4">
-                <div className="flex items-center justify-center gap-2 text-gray-500">
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  <span className="text-sm">في انتظار رد الموظف...</span>
-                </div>
-                <p className="text-xs text-gray-400 mt-2">سيتم التواصل معك قريباً</p>
-              </div>
-            ) : showContactForm ? (
+            {showContactForm ? (
               // فورم بيانات الاتصال
               <div className="space-y-3">
                 <p className="text-sm text-gray-600 text-center">يرجى إدخال بياناتك للتواصل معك</p>
@@ -354,28 +354,36 @@ export function ChatWidget() {
                 </Button>
               </div>
             ) : (
-              // حقل الإدخال العادي
-              <div className="flex gap-2">
-                <Input
-                  value={newMessage}
-                  onChange={(e) => setNewMessage(e.target.value)}
-                  onKeyPress={handleKeyPress}
-                  placeholder="اكتب رسالتك..."
-                  className="flex-1 h-11"
-                  disabled={sending}
-                />
-                <Button
-                  onClick={handleSend}
-                  disabled={!newMessage.trim() || sending}
-                  size="icon"
-                  className="h-11 w-11 bg-[#0a4fa3] hover:bg-[#073a7a]"
-                >
-                  {sending ? (
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                  ) : (
-                    <Send className="w-5 h-5" />
-                  )}
-                </Button>
+              // حقل الإدخال العادي (مع أو بدون رسالة انتظار الموظف)
+              <div className="space-y-2">
+                {waitingForAgent && (
+                  <div className="flex items-center justify-center gap-2 text-green-600 text-xs">
+                    <Headphones className="w-4 h-4" />
+                    <span>الموظف متصل الآن - يمكنك الكتابة</span>
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <Input
+                    value={newMessage}
+                    onChange={(e) => setNewMessage(e.target.value)}
+                    onKeyPress={handleKeyPress}
+                    placeholder="اكتب رسالتك للموظف..."
+                    className="flex-1 h-11"
+                    disabled={sending}
+                  />
+                  <Button
+                    onClick={handleSend}
+                    disabled={!newMessage.trim() || sending}
+                    size="icon"
+                    className="h-11 w-11 bg-[#0a4fa3] hover:bg-[#073a7a]"
+                  >
+                    {sending ? (
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : (
+                      <Send className="w-5 h-5" />
+                    )}
+                  </Button>
+                </div>
               </div>
             )}
           </div>
