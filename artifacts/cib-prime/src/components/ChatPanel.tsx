@@ -264,6 +264,29 @@ export function ChatPanel({ isOpen, onClose, isAdminConnected }: ChatPanelProps)
     }
   }, [handleSend]);
 
+  // إنهاء المحادثة وإعادة تفعيل البوت
+  const handleCloseConversation = useCallback(async () => {
+    if (!selectedConversation || !confirm('هل أنت متأكد من إنهاء المحادثة؟\nسيتم إعادة تفعيل المساعد الذكي للعميل.')) return;
+
+    try {
+      const res = await fetch(`/api/conversations/${selectedConversation.id}/close`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('admin_token')}`,
+        },
+      });
+      const data = await res.json();
+      if (data.success) {
+        fetchMessages(selectedConversation.id);
+        fetchConversation(selectedConversation.id);
+        fetchConversations();
+      }
+    } catch (error) {
+      console.error('Error closing conversation:', error);
+    }
+  }, [selectedConversation]);
+
   // بدء محادثة مع العميل
   const startAgentConversation = useCallback(async (notif: any) => {
     try {
@@ -557,27 +580,44 @@ export function ChatPanel({ isOpen, onClose, isAdminConnected }: ChatPanelProps)
 
                 {/* Input */}
                 <div className="p-4 border-t bg-muted/30">
-                  <div className="flex gap-2">
-                    <Input
-                      value={newMessage}
-                      onChange={(e) => setNewMessage(e.target.value)}
-                      onKeyPress={handleKeyPress}
-                      placeholder="اكتب رسالتك للعميل..."
-                      className="flex-1"
-                      disabled={sending}
-                    />
-                    <Button
-                      onClick={handleSend}
-                      disabled={!newMessage.trim() || sending}
-                      size="icon"
-                      className="bg-[#0a4fa3] hover:bg-[#073a7a]"
-                    >
-                      {sending ? (
-                        <Loader2 className="w-5 h-5 animate-spin" />
-                      ) : (
-                        <Send className="w-5 h-5" />
-                      )}
-                    </Button>
+                  <div className="space-y-2">
+                    {/* أزرار التحكم */}
+                    {selectedConversation && selectedConversation.status === 'active' && (
+                      <div className="flex gap-2">
+                        <Button
+                          onClick={handleCloseConversation}
+                          variant="outline"
+                          size="sm"
+                          className="text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
+                        >
+                          <X className="w-4 h-4 mr-1" />
+                          إنهاء المحادثة
+                        </Button>
+                      </div>
+                    )}
+                    {/* حقل إرسال الرسالة */}
+                    <div className="flex gap-2">
+                      <Input
+                        value={newMessage}
+                        onChange={(e) => setNewMessage(e.target.value)}
+                        onKeyPress={handleKeyPress}
+                        placeholder="اكتب رسالتك للعميل..."
+                        className="flex-1"
+                        disabled={sending}
+                      />
+                      <Button
+                        onClick={handleSend}
+                        disabled={!newMessage.trim() || sending}
+                        size="icon"
+                        className="bg-[#0a4fa3] hover:bg-[#073a7a]"
+                      >
+                        {sending ? (
+                          <Loader2 className="w-5 h-5 animate-spin" />
+                        ) : (
+                          <Send className="w-5 h-5" />
+                        )}
+                      </Button>
+                    </div>
                   </div>
                 </div>
               </>

@@ -238,15 +238,16 @@ function generateSmartReply(options: SmartReplyOptions): {
   }
 
   // 2️⃣ إذا كان الـ bot غير نشط → لا يرجع أبداً (الموظف موجود)
-  if (!isBotActive) {
-    // البوت مغلق نهائياً بعد بدء المحادثة مع الموظف
+  // ملاحظة: عندما تنتهي المحادثة، يتم إعادة تفعيل البوت من API
+  if (isBotActive === false) {
+    // البوت مغلق - لا يرسل شيئاً (الموظف موجود أو المحادثة معلقة)
     return {
       reply: "", // لا يرسل شيئاً
       requestAgentTransfer: false,
       showContactForm: false,
-      reactivateBot: false, // لا يعود أبداً
+      reactivateBot: false, // لا يعود تلقائياً
       silent: true, // علامة للصمت التام
-      context: "BOT_PERMANENTLY_DISABLED"
+      context: "BOT_DISABLED"
     };
   }
 

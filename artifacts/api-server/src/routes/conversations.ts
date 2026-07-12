@@ -493,13 +493,52 @@ router.post("/:id/connect", requireAdminAuth, async (req, res) => {
       content: "مرحباً بك! 👋\n\nأنا أحد ممثلي خدمة عملاء CIB Prime.\n\nيرجى إرسال استفسارك وسأقوم بمساعدتك. 😊",
     });
 
-    // إشعار العميل عبر WebSocket أن الموظف موجود
-    // TODO: إرسال إشعار WebSocket للعميل
-
     res.json({ success: true, message: "تم بدء المحادثة مع العميل" });
   } catch (error: any) {
     console.error("❌ [CONNECT] Error:", error.message || error);
     res.status(500).json({ success: false, error: "فشل في بدء المحادثة" });
+  }
+});
+
+// إنهاء المحادثة وإعادة تفعيل البوت - يتطلب auth
+router.post("/:id/close", requireAdminAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const conversationId = parseInt(id);
+
+    // الحصول على بيانات المحادثة
+    const [conversation] = await db
+      .select()
+      .from(conversationsTable)
+      .where(eq(conversationsTable.id, conversationId));
+
+    if (!conversation) {
+      return res.status(404).json({ success: false, error: "المحادثة غير موجودة" });
+    }
+
+    // تحديث حالة المحادثة وإعادة تفعيل البوت
+    await db
+      .update(conversationsTable)
+      .set({
+        status: "closed",
+        agentConnectedAt: null,
+        botActive: true, // إعادة تفعيل البوت
+        isAgentTransferRequested: false, // إعادة تعيين طلب الموظف
+      })
+      .where(eq(conversationsTable.id, conversationId));
+
+    // إضافة رسالة من البوت للعميل
+    await db.insert(messagesTable).values({
+      conversationId,
+      senderType: "bot",
+      content: `📋 تم إنهاء المحادثة مع الموظف.\n\nيسعدنا مساعدتك مجدداً! 😊\n\n• اكتب استفسارك للتحدث مع المساعد الذكي\n• اكتب "التواصل مع الموظف" للتحدث مع أحد ممثلي خدمة العملاء`,
+    });
+
+    console.log("[CLOSE] Conversation ended, bot reactivated for conversation:", conversationId);
+    res.json({ success: true, message: "تم إنهاء المحادثة وإعادة تفعيل المساعد الذكي" });
+  } catch (error: any) {
+    console.error("❌ [CLOSE] Error:", error.message || error);
+    res.status(500).json({ success: false, error: "فشل في إنهاء المحادثة" });
   }
 });
 
