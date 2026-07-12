@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { eq, desc, and } from "drizzle-orm";
-import { db, conversationsTable, messagesTable, clientSessionsTable } from "@workspace/db";
+import { db, conversationsTable, messagesTable, clientSessionsTable, conversationSummariesTable } from "@workspace/db";
+import { LocalAI } from "../lib/localAI";
 
 const router = Router();
 
@@ -37,16 +38,28 @@ router.post("/", async (req, res) => {
     // إنشاء محادثة جديدة
     const [conversation] = await db
       .insert(conversationsTable)
-      .values({ clientSessionId: sessionId, status: "pending" })
+      .values({ clientSessionId: sessionId, status: "pending", messageCount: 1 })
       .returning();
 
     console.log("[CONVERSATIONS] New conversation created:", conversation.id);
+
+    // رسالة ترحيبية ذكية
+    const welcomeMessage = `مرحباً بك في خدمة عملاء CIB Prime! 😊
+
+أنا مساعدك الذكي، يمكنني مساعدتك في:
+• التسجيل في CIB Prime وتفعيل الساعة الذكية
+• معرفة الألوان المتاحة (9 ألوان عصرية)
+• شروط التفعيل والاستحقاق
+• خدمات البنك (التمويل، السحب على سيارة)
+
+اكتب استفسارك وسأجيب عليك فوراً!
+أو اكتب "التواصل مع الموظف" للتحدث مع أحد ممثلي خدمة العملاء.`;
 
     // إضافة رسالة ترحيبية
     await db.insert(messagesTable).values({
       conversationId: conversation.id,
       senderType: "bot",
-      content: "مرحباً بك في خدمة عملاء CIB! 👋\nيرجى إرسال استفسارك وسنقوم بالرد عليك في أقرب وقت.\n\nاكتب \"التواصل مع الموظف\" للتحدث مع أحد ممثلي خدمة العملاء.",
+      content: welcomeMessage,
     });
 
     console.log("[CONVERSATIONS] Welcome message added");
@@ -185,15 +198,125 @@ router.post("/:id/messages", async (req, res) => {
 
     console.log("[MESSAGES] Message saved:", message);
 
-    // تحديث وقت المحادثة
+    // تحديث عداد الرسائل
     await db
       .update(conversationsTable)
-      .set({ updatedAt: new Date() })
+      .set({ 
+        updatedAt: new Date(),
+        messageCount: db.raw(`message_count + 1`)
+      })
       .where(eq(conversationsTable.id, conversationId));
 
-    // إذا كانت الرسالة من العميل، إشعار الموظف
+    // إذا كانت الرسالة من العميل
     if (senderType === "client") {
-      // TODO: إرسال إشعار عبر WebSocket
+      console.log("[MESSAGES] Processing client message with LocalAI...");
+      
+      // الحصول على بيانات المحادثة
+      const [conversation] = await db
+        .select()
+        .from(conversationsTable)
+        .where(eq(conversationsTable.id, conversationId));
+
+      // الحصول على آخر ملخص للمحادثة
+      const [lastSummary] = await db
+        .select()
+        .from(conversationSummariesTable)
+        .where(eq(conversationSummariesTable.conversationId, conversationId))
+        .orderBy(desc(conversationSummariesTable.createdAt))
+        .limit(1);
+
+      // الحصول على آخر 3 رسائل
+      const recentMessages = await db
+        .select()
+        .from(messagesTable)
+        .where(eq(messagesTable.conversationId, conversationId))
+        .orderBy(desc(messagesTable.createdAt))
+        .limit(6);
+
+      // الحصول على بيانات العميل
+      let clientName = "عميلنا العزيز";
+      if (conversation?.clientSessionId) {
+        const [session] = await db
+          .select()
+          .from(clientSessionsTable)
+          .where(eq(clientSessionsTable.sessionId, conversation.clientSessionId));
+        if (session?.fullName) {
+          clientName = session.fullName;
+        }
+      }
+
+      // توليد رد ذكي
+      const aiResult = LocalAI.generateReply({
+        message: content,
+        conversationContext: lastSummary?.summary || undefined,
+        clientName
+      });
+
+      console.log("[MESSAGES] AI Result:", { 
+        shouldStopBot: aiResult.shouldStopBot, 
+        context: aiResult.context 
+      });
+
+      // إذا كان طلب تحويل للموظف
+      if (aiResult.shouldStopBot) {
+        await db
+          .update(conversationsTable)
+          .set({ isAgentTransferRequested: true })
+          .where(eq(conversationsTable.id, conversationId));
+      }
+
+      // إضافة رد الذكاء الاصطناعي (إذا لم يكن طلب موظف)
+      if (!aiResult.shouldStopBot) {
+        await db.insert(messagesTable).values({
+          conversationId,
+          senderType: "bot",
+          content: aiResult.reply,
+        });
+      }
+
+      // تلخيص المحادثة بعد كل 3 رسائل جديدة
+      const messageCount = (conversation?.messageCount || 0) + 1;
+      if (messageCount % 3 === 0) {
+        const allMessages = await db
+          .select()
+          .from(messagesTable)
+          .where(eq(messagesTable.conversationId, conversationId))
+          .orderBy(messagesTable.createdAt);
+
+        const summary = LocalAI.summarize(allMessages.map(m => ({
+          senderType: m.senderType as 'client' | 'bot' | 'agent',
+          content: m.content
+        })));
+
+        // حفظ الملخص
+        await db.insert(conversationSummariesTable).values({
+          conversationId,
+          summary,
+          messageCount
+        });
+
+        // تحديث آخر ملخص
+        await db
+          .update(conversationsTable)
+          .set({ lastSummaryAt: new Date() })
+          .where(eq(conversationsTable.id, conversationId));
+
+        console.log("[MESSAGES] Conversation summarized:", summary.substring(0, 50) + "...");
+      }
+
+      // إعادة جلب الرسائل المحدثة
+      const updatedMessages = await db
+        .select()
+        .from(messagesTable)
+        .where(eq(messagesTable.conversationId, conversationId))
+        .orderBy(messagesTable.createdAt);
+
+      res.json({ 
+        success: true, 
+        data: updatedMessages,
+        isAgentTransferRequested: aiResult.shouldStopBot
+      });
+      return;
     }
 
     res.json({ success: true, data: message });

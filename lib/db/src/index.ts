@@ -149,6 +149,15 @@ export async function ensureTables(): Promise<void> {
         is_read BOOLEAN NOT NULL DEFAULT false,
         created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
       );
+    `,
+    conversation_summaries: `
+      CREATE TABLE IF NOT EXISTS conversation_summaries (
+        id SERIAL PRIMARY KEY,
+        conversation_id INTEGER NOT NULL,
+        summary TEXT NOT NULL,
+        message_count INTEGER NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+      );
     `
   };
 
@@ -211,6 +220,7 @@ export async function ensureTables(): Promise<void> {
     'CREATE INDEX IF NOT EXISTS devices_last_used_idx ON admin_devices (last_used_at)',
     'CREATE INDEX IF NOT EXISTS conversations_client_session_idx ON conversations (client_session_id)',
     'CREATE INDEX IF NOT EXISTS messages_conversation_idx ON messages (conversation_id)',
+    'CREATE INDEX IF NOT EXISTS conversation_summaries_conv_idx ON conversation_summaries (conversation_id)',
   ];
 
   for (const idx of indices) {

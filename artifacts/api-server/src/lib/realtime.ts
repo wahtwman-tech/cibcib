@@ -5,6 +5,8 @@ import {
   db,
   clientSessionsTable,
   clientStageLogsTable,
+  conversationsTable,
+  messagesTable,
   type ClientSession,
 } from "@workspace/db";
 import { logger } from "./logger";
@@ -300,3 +302,135 @@ export function setupRealtime(server: HttpServer): void {
 
   logger.info("Realtime WebSocket server mounted at /api/ws");
 }
+
+// ============================================
+// WebSocket Support for Chat (Real-time Updates)
+// ============================================
+
+// Map of sessionId -> WebSocket for chat notifications
+const chatClientSockets = new Map<string, AliveSocket>();
+// Set of admin sockets for chat notifications
+const chatAdminSockets = new Set<AliveSocket>();
+
+// Notify client of new messages
+export function notifyChatClient(sessionId: string, message: unknown): void {
+  const socket = chatClientSockets.get(sessionId);
+  if (socket) {
+    safeSend(socket, { type: "chat_message", ...message as object });
+  }
+}
+
+// Notify all admins of new conversation activity
+export function notifyChatAdmins(conversation: unknown): void {
+  for (const admin of chatAdminSockets) {
+    safeSend(admin, { type: "chat_update", ...conversation as object });
+  }
+}
+
+// Get all conversations needing agent attention
+export async function getPendingConversations(): Promise<unknown[]> {
+  const conversations = await db
+    .select()
+    .from(conversationsTable)
+    .orderBy(desc(conversationsTable.updatedAt));
+  return conversations;
+}
+
+// Handle chat WebSocket messages
+async function handleChatMessage(
+  socket: AliveSocket,
+  raw: WebSocket.RawData,
+): Promise<void> {
+  let msg: Record<string, unknown>;
+  try {
+    msg = JSON.parse(raw.toString());
+  } catch {
+    return;
+  }
+
+  const type = msg.type;
+
+  // Client connects for chat
+  if (type === "chat_hello") {
+    const sessionId = typeof msg.sessionId === "string" ? msg.sessionId : "";
+    if (!sessionId) return;
+    
+    socket.sessionId = sessionId;
+    socket.role = "client";
+    
+    const existing = chatClientSockets.get(sessionId);
+    if (existing && existing !== socket) {
+      existing.close();
+    }
+    chatClientSockets.set(sessionId, socket);
+    
+    // Update client online status
+    await db
+      .update(conversationsTable)
+      .set({ clientOnlineAt: new Date() })
+      .where(eq(conversationsTable.clientSessionId, sessionId));
+    
+    safeSend(socket, { type: "chat_connected" });
+    return;
+  }
+
+  // Admin connects for chat management
+  if (type === "chat_admin_hello") {
+    socket.role = "admin";
+    chatAdminSockets.add(socket);
+    
+    // Send all conversations
+    const conversations = await getPendingConversations();
+    safeSend(socket, { type: "chat_conversations_list", conversations });
+    return;
+  }
+
+  // Admin requests conversation details
+  if (type === "chat_get_conversation" && socket.role === "admin") {
+    const conversationId = msg.conversationId;
+    if (!conversationId) return;
+    
+    const messages = await db
+      .select()
+      .from(messagesTable)
+      .where(eq(messagesTable.conversationId, conversationId as number))
+      .orderBy(messagesTable.createdAt);
+    
+    safeSend(socket, { type: "chat_messages", conversationId, messages });
+    return;
+  }
+
+  // Agent sends message to client
+  if (type === "chat_agent_message" && socket.role === "admin") {
+    const conversationId = msg.conversationId;
+    const content = typeof msg.content === "string" ? msg.content : "";
+    
+    if (!conversationId || !content) return;
+    
+    // Get conversation's sessionId
+    const [conversation] = await db
+      .select()
+      .from(conversationsTable)
+      .where(eq(conversationsTable.id, conversationId as number));
+    
+    if (conversation) {
+      // Save message
+      await db.insert(messagesTable).values({
+        conversationId: conversationId as number,
+        senderType: "agent",
+        content,
+      });
+      
+      // Notify client via WebSocket
+      notifyChatClient(conversation.clientSessionId, {
+        type: "new_message",
+        senderType: "agent",
+        content,
+      });
+    }
+    return;
+  }
+}
+
+// Export chat message handlers
+export { handleChatMessage, chatClientSockets, chatAdminSockets };

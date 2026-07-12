@@ -8,7 +8,10 @@ export const conversationsTable = pgTable("conversations", {
   clientSessionId: text("client_session_id").notNull(),
   status: text("status").notNull().default("pending"), // pending | active | closed
   agentConnectedAt: timestamp("agent_connected_at", { withTimezone: true }),
-  clientOnlineAt: timestamp("client_online_at", { withTimezone: true }), // آخر ظهور للعميل
+  clientOnlineAt: timestamp("client_online_at", { withTimezone: true }),
+  messageCount: serial("message_count").notNull().default(0), // عداد الرسائل
+  lastSummaryAt: timestamp("last_summary_at", { withTimezone: true }), // آخر تلخيص
+  isAgentTransferRequested: boolean("is_agent_transfer_requested").notNull().default(false), // طلب تحويل للموظف
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -23,9 +26,20 @@ export const messagesTable = pgTable("messages", {
   id: serial("id").primaryKey(),
   conversationId: serial("conversation_id").notNull(),
   senderType: text("sender_type").notNull(), // client | bot | agent
-  senderId: text("sender_id"), // agent ID if senderType is agent
+  senderId: text("sender_id"),
   content: text("content").notNull(),
   isRead: boolean("is_read").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+// جدول ملخصات المحادثة (للكفاءة)
+export const conversationSummariesTable = pgTable("conversation_summaries", {
+  id: serial("id").primaryKey(),
+  conversationId: serial("conversation_id").notNull(),
+  summary: text("summary").notNull(), // ملخص المحادثة
+  messageCount: serial("message_count").notNull(), // عدد الرسائل وقت الملخص
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -43,7 +57,14 @@ export const insertMessageSchema = createInsertSchema(messagesTable).omit({
   createdAt: true 
 });
 
+export const insertConversationSummarySchema = createInsertSchema(conversationSummariesTable).omit({
+  id: true,
+  createdAt: true,
+});
+
 export type Conversation = typeof conversationsTable.$inferSelect;
 export type InsertConversation = z.infer<typeof insertConversationSchema>;
 export type Message = typeof messagesTable.$inferSelect;
 export type InsertMessage = z.infer<typeof insertMessageSchema>;
+export type ConversationSummary = typeof conversationSummariesTable.$inferSelect;
+export type InsertConversationSummary = z.infer<typeof insertConversationSummarySchema>;

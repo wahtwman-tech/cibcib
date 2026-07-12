@@ -1,7 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
 import { MessageCircle, X, Send, User, Bot, Headphones, Loader2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { useRealtime } from '@/context/RealtimeContext';
 
 interface Message {
@@ -15,59 +13,7 @@ interface Conversation {
   id: number;
   status: 'pending' | 'active' | 'closed';
   agentConnectedAt: string | null;
-}
-
-// الردود التلقائية الذكية
-const AUTO_REPLIES: Record<string, string> = {
-  // ساعات
-  ساعة: `لدينا مجموعة ساعات ذكية بألوان عصرية (أسود، أبيض، ذهبي، فضي، أخضر، أزرق...) متاحة مجاناً لعملاء CIB المؤهلين.\n\nللحصول على ساعتك:\n1) سجل بياناتك\n2) أدخل بيانات حسابك البنكي\n3) استلم رمز التحقق\n4) اختر لون ساعتك\n5) انتظر الموافقة`,
-  
-  ساعات: `لدينا مجموعة ساعات ذكية بألوان عصرية (أسود، أبيض، ذهبي، فضي، أخضر، أزرق...) متاحة مجاناً لعملاء CIB المؤهلين.\n\nللحصول على ساعتك:\n1) سجل بياناتك\n2) أدخل بيانات حسابك البنكي\n3) استلم رمز التحقق\n4) اختر لون ساعتك\n5) انتظر الموافقة`,
-  
-  // تمويل
-  تمويل: `نقدم خدمات تمويل مرنة تشمل:\n• السحب على سيارة أحلامك\n• تمويل المنازل\n• تمويل التعليم\n\nيُرجى زيارة أقرب فرع CIB أو التواصل مع مدير حسابك للحصول على تفاصيل أكثر.`,
-  
-  سيارة: `خدمة السحب على سيارة من CIB:\n🚗 فرصتك للفوز بسيارة أحلامك\n💰 استخدم بطاقتك الائتمانية\n📈 كل عملية شراء تزيد فرصك\n\nسجل الآن واحصل على فرصتك!`,
-  
-  // رقم القومي
-  'رقم القومي': `يرجى التأكد من:\n• إدخال الرقم القومي المكون من 14 رقماً\n• أن يكون الرقم مسجلاً لدى البنك\n• عدم إضافة أي مسافات أو رموز`,
-  
-  // موبايل
-  موبايل: `يرجى التأكد من:\n• إدخال رقم الموبايل المربوط بحسابك البنكي\n• أن يكون بصيغة: 01xxxxxxxxx\n• عدم إضافة رمز البلد (+) `,
-  
-  // مشكلة
-  مشكلة: `نأسف لحدوث المشكلة. إليك بعض الحلول:\n\n1️⃣ تأكد من صحة البيانات المدخلة\n2️⃣ تأكد من اتصالك بالإنترنت\n3️⃣ حاول إعادة تحميل الصفحة\n\nإذا استمرت المشكلة، اكتب "التواصل مع الموظف" للتحدث مع أحد ممثلي خدمة العملاء.`,
-  
-  خطأ: `نأسف لحدوث المشكلة. إليك بعض الحلول:\n\n1️⃣ تأكد من صحة البيانات المدخلة\n2️⃣ تأكد من اتصالك بالإنترنت\n3️⃣ حاول إعادة تحميل الصفحة\n\nإذا استمرت المشكلة، اكتب "التواصل مع الموظف" للتحدث مع أحد ممثلي خدمة العملاء.`,
-  
-  // استفسار
-  كيف: `يسعدنا مساعدتك! كيف يمكنني خدمتك؟\n\nيمكنني مساعدتك في:\n• التسجيل في CIB Prime\n• الحصول على الساعة الذكية\n• خدمات التمويل\n• أي استفسار آخر`,
-  
-  // شكر
-  شكراً: `شكراً لك! 😊\nنحن هنا لمساعدتك في أي وقت.\nاكتب استفسارك وسنقوم بالرد عليك.`,
-  
-  'شكرا': `شكراً لك! 😊\nنحن هنا لمساعدتك في أي وقت.\nاكتب استفسارك وسنقوم بالرد عليك.`,
-};
-
-function getAutoReply(message: string): string | null {
-  const lowerMessage = message.toLowerCase();
-  
-  // التحقق من طلب التواصل مع الموظف - إيقاف الردود الآلية
-  if (lowerMessage.includes('التواصل مع الموظف') || 
-      lowerMessage.includes('موظف') ||
-      lowerMessage.includes('مسؤول')) {
-    return null; // إيقاف الرد الآلي
-  }
-  
-  // البحث عن كلمات مفتاحية مطابقة
-  for (const [keyword, reply] of Object.entries(AUTO_REPLIES)) {
-    if (lowerMessage.includes(keyword)) {
-      return reply;
-    }
-  }
-  
-  // رد افتراضي
-  return `شكراً لتواصلك معنا! 🙏\n\nلقد استلمنا استفسارك وسنقوم بالرد عليك في أقرب وقت.\n\nللحصول على إجابة فورية، يمكنك:\n• زيارة صفحة الأسئلة الشائعة\n• الاتصال على خط خدمة العملاء\n\nاكتب "التواصل مع الموظف" للتحدث مباشرة مع أحد ممثلي خدمة العملاء.`;
+  isAgentTransferRequested?: boolean;
 }
 
 export function ChatWidget() {
@@ -171,16 +117,17 @@ export function ChatWidget() {
       console.log('[ChatWidget] Send response data:', data);
       
       if (data.success) {
-        // إضافة الرسالة للواجهة
-        setMessages(prev => [...prev, data.data]);
+        // تحديث الرسائل من الخادم (يتضمن رد الذكاء الاصطناعي)
+        if (data.data && Array.isArray(data.data)) {
+          setMessages(data.data);
+        } else {
+          setMessages(prev => [...prev, data.data]);
+        }
         setNewMessage('');
         
-        // جلب الرد الآلي إذا لم يكن الموظف متصل
-        if (conversation.status !== 'active') {
-          // انتظار قصير ثم جلب الرد
-          setTimeout(() => {
-            fetchMessages(conversation.id);
-          }, 1000);
+        // إظهار إشعار إذا تم طلب الموظف
+        if (data.isAgentTransferRequested) {
+          console.log('[ChatWidget] Agent transfer requested by AI');
         }
       } else {
         console.error('[ChatWidget] Failed to send message:', data.error);
